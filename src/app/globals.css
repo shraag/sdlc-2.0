@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --color-warm-50: #FAFAF8;
+  --color-warm-100: #F5F3EF;
+  --color-warm-200: #E8E6E1;
+  --color-warm-300: #D4D1CC;
+  --color-warm-400: #9C9891;
+  --color-warm-500: #6B6860;
+  --color-warm-600: #4A4842;
+  --color-warm-700: #2D2B27;
+  --color-warm-800: #1a1a1a;
+  --color-warm-900: #111111;
+
+  --color-ink: #1a1a1a;
+  --color-ink-light: #4A4842;
+  --color-ink-muted: #9C9891;
+  --color-surface: #FAFAF8;
+  --color-surface-alt: #F5F3EF;
+  --color-border: #E5E5E3;
+
+  --color-accent: #4F46E5;
+  --color-accent-hover: #4338CA;
+  --color-accent-light: #EEF2FF;
+  --color-sky: #0EA5E9;
+
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-instrument-serif), Georgia, 'Times New Roman', serif;
+
+  --animate-orb-breathe: orb-breathe 4s ease-in-out infinite;
+  --animate-orb-glow: orb-glow 3s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2s ease-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes orb-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+  @keyframes orb-glow {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.4; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--color-accent-light);
+  color: var(--color-accent);
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
