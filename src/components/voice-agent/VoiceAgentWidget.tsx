@@ -5,15 +5,20 @@ import { VoiceOrb } from './VoiceOrb';
 import { CallControls } from './CallControls';
 import { TranscriptDisplay } from './TranscriptDisplay';
 import { Badge } from '@/components/ui/Badge';
+import type { CustomerInfo } from './VoiceAgentFAB';
 
-export function VoiceAgentWidget() {
+interface VoiceAgentWidgetProps {
+  customerInfo?: CustomerInfo | null;
+}
+
+export function VoiceAgentWidget({ customerInfo }: VoiceAgentWidgetProps) {
   const { status, volumeLevel, transcript, isMuted, isDemo, startCall, stopCall, toggleMute } =
-    useVapi();
+    useVapi(customerInfo || undefined);
 
   return (
     <div className="flex flex-col items-center gap-6">
       {isDemo && status === 'idle' && (
-        <Badge variant="gradient" className="mb-1">
+        <Badge className="mb-1">
           Interactive Demo
         </Badge>
       )}

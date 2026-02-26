@@ -4,13 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { VoiceAgentWidget } from './VoiceAgentWidget';
 import { useEffect } from 'react';
+import type { CustomerInfo } from './VoiceAgentFAB';
 
 interface VoiceAgentModalProps {
   open: boolean;
   onClose: () => void;
+  customerInfo?: CustomerInfo | null;
 }
 
-export function VoiceAgentModal({ open, onClose }: VoiceAgentModalProps) {
+export function VoiceAgentModal({ open, onClose, customerInfo }: VoiceAgentModalProps) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
@@ -53,7 +55,7 @@ export function VoiceAgentModal({ open, onClose }: VoiceAgentModalProps) {
               </p>
             </div>
 
-            <VoiceAgentWidget />
+            <VoiceAgentWidget customerInfo={customerInfo} />
           </motion.div>
         </motion.div>
       )}

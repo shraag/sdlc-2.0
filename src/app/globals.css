@@ -24,6 +24,22 @@
   --color-accent-light: #EEF2FF;
   --color-sky: #0EA5E9;
 
+  /* Dashboard dark theme */
+  --color-dash-bg: #0a0a0b;
+  --color-dash-surface: #111113;
+  --color-dash-surface-2: #1a1a1e;
+  --color-dash-surface-3: #232328;
+  --color-dash-border: #2a2a30;
+  --color-dash-border-light: #35353d;
+  --color-dash-text: #ededef;
+  --color-dash-text-secondary: #a0a0ab;
+  --color-dash-text-muted: #63636e;
+  --color-dash-accent: #6366f1;
+  --color-dash-accent-hover: #818cf8;
+  --color-dash-success: #22c55e;
+  --color-dash-warning: #f59e0b;
+  --color-dash-error: #ef4444;
+
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-display: var(--font-instrument-serif), Georgia, 'Times New Roman', serif;
 
@@ -68,4 +84,19 @@ body {
 
 @utility text-balance {
   text-wrap: balance;
+}
+
+/* Dashboard scrollbar */
+.dash-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.dash-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dash-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-dash-border);
+  border-radius: 3px;
+}
+.dash-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-dash-border-light);
 }

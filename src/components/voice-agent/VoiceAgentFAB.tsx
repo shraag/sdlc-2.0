@@ -4,9 +4,25 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mic } from 'lucide-react';
 import { VoiceAgentModal } from './VoiceAgentModal';
+import { InfoCaptureModal } from './InfoCaptureModal';
+
+export interface CustomerInfo {
+  name: string;
+  email: string;
+  company: string;
+  brief: string;
+}
 
 export function VoiceAgentFAB() {
-  const [open, setOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
+
+  function handleInfoSubmit(info: CustomerInfo) {
+    setCustomerInfo(info);
+    setInfoOpen(false);
+    setVoiceOpen(true);
+  }
 
   return (
     <>
@@ -14,7 +30,7 @@ export function VoiceAgentFAB() {
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 1.5, type: 'spring', stiffness: 200, damping: 15 }}
-        onClick={() => setOpen(true)}
+        onClick={() => setInfoOpen(true)}
         className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 rounded-full bg-ink text-warm-50 pl-5 pr-6 py-3.5 shadow-xl shadow-ink/20 cursor-pointer hover:bg-warm-700 transition-colors group"
       >
         <span className="relative flex h-5 w-5 items-center justify-center">
@@ -24,7 +40,17 @@ export function VoiceAgentFAB() {
         <span className="text-sm font-medium">Talk to AI</span>
       </motion.button>
 
-      <VoiceAgentModal open={open} onClose={() => setOpen(false)} />
+      <InfoCaptureModal
+        open={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        onSubmit={handleInfoSubmit}
+      />
+
+      <VoiceAgentModal
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        customerInfo={customerInfo}
+      />
     </>
   );
 }
