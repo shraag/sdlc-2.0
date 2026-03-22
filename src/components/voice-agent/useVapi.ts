@@ -145,6 +145,13 @@ export function useVapi(customerInfo?: CustomerInfo) {
       vapi.on('error', (error: any) => {
         console.error('Vapi error:', error);
         setStatus('idle');
+        setVolumeLevel(0);
+        // Still save if we have transcript content
+        const info = customerInfoRef.current;
+        if (info && transcriptRef.current.length > 0 && !savingRef.current) {
+          savingRef.current = true;
+          saveAndProcessSession(info, transcriptRef.current, setPostCallState);
+        }
       });
     });
 
@@ -263,9 +270,10 @@ export function useVapi(customerInfo?: CustomerInfo) {
     }
     const vapi = vapiRef.current;
     if (vapi) vapi.stop();
-    // Don't call endCallAndSave here — the call-end event handler will do it
     setStatus('idle');
     setVolumeLevel(0);
+    // Save immediately — savingRef prevents double-save if call-end also fires
+    endCallAndSave();
   }, [isDemo]);
 
   const toggleMute = useCallback(() => {
