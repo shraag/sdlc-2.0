@@ -55,7 +55,7 @@ export function VoiceAgentModal({ open, onClose, customerInfo }: VoiceAgentModal
               </p>
             </div>
 
-            <VoiceAgentWidget customerInfo={customerInfo} />
+            <VoiceAgentWidget customerInfo={customerInfo} onClose={onClose} />
           </motion.div>
         </motion.div>
       )}

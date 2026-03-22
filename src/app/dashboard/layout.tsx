@@ -1,37 +1,23 @@
-'use client';
+import { createClient } from '@/lib/supabase/server';
+import { DashboardShell } from '@/components/dashboard/DashboardShell';
 
-import { useState } from 'react';
-import { usePathname, useParams } from 'next/navigation';
-import { Sidebar } from '@/components/dashboard/Sidebar';
-import { TopBar } from '@/components/dashboard/TopBar';
-import { AIChatPanel } from '@/components/dashboard/AIChatPanel';
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [chatOpen, setChatOpen] = useState(false);
-  const pathname = usePathname();
+  let profile = null;
+  if (user) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    profile = data;
+  }
 
-  // Extract project ID from URL if on a project page
-  const projectIdMatch = pathname.match(/\/dashboard\/project\/([^/]+)/);
-  const projectId = projectIdMatch?.[1];
+  const initials = profile?.full_name
+    ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+    : '?';
 
-  return (
-    <div className="min-h-screen bg-dash-bg text-dash-text">
-      <Sidebar />
-
-      <div className="pl-56 transition-all duration-200">
-        <TopBar onToggleChat={() => setChatOpen(!chatOpen)} chatOpen={chatOpen} />
-
-        <main className={`transition-all duration-200 ${chatOpen ? 'pr-80' : ''}`}>
-          <div className="p-6">{children}</div>
-        </main>
-      </div>
-
-      <AIChatPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        projectId={projectId}
-        context={pathname}
-      />
-    </div>
-  );
+  return <DashboardShell initials={initials}>{children}</DashboardShell>;
 }

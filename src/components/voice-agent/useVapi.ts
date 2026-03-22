@@ -5,8 +5,15 @@ import type { VoiceAgentStatus, TranscriptEntry } from '@/types';
 import type { CustomerInfo } from './VoiceAgentFAB';
 import { VAPI_SYSTEM_PROMPT, VAPI_FIRST_MESSAGE, VAPI_VOICE_CONFIG } from '@/lib/vapi-config';
 
-async function saveAndProcessSession(customerInfo: CustomerInfo, transcript: TranscriptEntry[]) {
+export type PostCallState = 'none' | 'saving' | 'processing' | 'done' | 'error';
+
+async function saveAndProcessSession(
+  customerInfo: CustomerInfo,
+  transcript: TranscriptEntry[],
+  onStateChange: (state: PostCallState) => void
+) {
   try {
+    onStateChange('saving');
     const { createClient } = await import('@/lib/supabase/client');
     const supabase = createClient();
 
@@ -15,7 +22,6 @@ async function saveAndProcessSession(customerInfo: CustomerInfo, transcript: Tra
       .map((t) => `${t.role === 'assistant' ? 'AI' : 'Customer'}: ${t.text}`)
       .join('\n\n');
 
-    // Create the voice session record first
     const { data: session } = await supabase
       .from('voice_sessions')
       .insert({
@@ -29,23 +35,24 @@ async function saveAndProcessSession(customerInfo: CustomerInfo, transcript: Tra
       .select()
       .single();
 
-    if (!session) return;
+    if (!session) { onStateChange('error'); return; }
 
-    // Process with AI in background (don't block)
-    fetch('/api/voice-session/process', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        transcript: fullTranscript,
-        customerName: customerInfo.name,
-        customerEmail: customerInfo.email,
-        customerCompany: customerInfo.company,
-        projectBrief: customerInfo.brief,
-      }),
-    })
-      .then((res) => res.json())
-      .then(async (result) => {
-        if (result.error) return;
+    onStateChange('processing');
+
+    try {
+      const res = await fetch('/api/voice-session/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: fullTranscript,
+          customerName: customerInfo.name,
+          customerEmail: customerInfo.email,
+          customerCompany: customerInfo.company,
+          projectBrief: customerInfo.brief,
+        }),
+      });
+      const result = await res.json();
+      if (!result.error) {
         await supabase
           .from('voice_sessions')
           .update({
@@ -55,10 +62,15 @@ async function saveAndProcessSession(customerInfo: CustomerInfo, transcript: Tra
             status: 'reviewed',
           })
           .eq('id', session.id);
-      })
-      .catch((err) => console.error('Failed to process session:', err));
+      }
+    } catch (err) {
+      console.error('Failed to process session:', err);
+    }
+
+    onStateChange('done');
   } catch (err) {
     console.error('Failed to save voice session:', err);
+    onStateChange('error');
   }
 }
 
@@ -68,16 +80,25 @@ export function useVapi(customerInfo?: CustomerInfo) {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
+  const [postCallState, setPostCallState] = useState<PostCallState>('none');
   const vapiRef = useRef<any>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const volumeSimRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptRef = useRef<TranscriptEntry[]>([]);
+  const customerInfoRef = useRef(customerInfo);
+  const savingRef = useRef(false); // prevent double-save
 
   useEffect(() => {
     transcriptRef.current = transcript;
   }, [transcript]);
 
+  useEffect(() => {
+    customerInfoRef.current = customerInfo;
+  }, [customerInfo]);
+
   const hasKey = typeof window !== 'undefined' && !!process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
 
+  // Vapi setup — only depends on hasKey, not customerInfo
   useEffect(() => {
     if (!hasKey) {
       setIsDemo(true);
@@ -94,8 +115,10 @@ export function useVapi(customerInfo?: CustomerInfo) {
       vapi.on('call-end', () => {
         setStatus('idle');
         setVolumeLevel(0);
-        if (customerInfo && transcriptRef.current.length > 0) {
-          saveAndProcessSession(customerInfo, transcriptRef.current);
+        const info = customerInfoRef.current;
+        if (info && transcriptRef.current.length > 0 && !savingRef.current) {
+          savingRef.current = true;
+          saveAndProcessSession(info, transcriptRef.current, setPostCallState);
         }
       });
       vapi.on('speech-start', () => setStatus('listening'));
@@ -105,10 +128,7 @@ export function useVapi(customerInfo?: CustomerInfo) {
         if (msg.type === 'transcript') {
           setTranscript((prev) => {
             if (!msg.transcriptType || msg.transcriptType === 'final') {
-              return [
-                ...prev,
-                { role: msg.role, text: msg.transcript, timestamp: Date.now(), isFinal: true },
-              ];
+              return [...prev, { role: msg.role, text: msg.transcript, timestamp: Date.now(), isFinal: true }];
             }
             const updated = [...prev];
             const lastIdx = updated.length - 1;
@@ -131,21 +151,37 @@ export function useVapi(customerInfo?: CustomerInfo) {
     return () => {
       if (vapi) vapi.stop();
     };
-  }, [hasKey, customerInfo]);
+  }, [hasKey]);
+
+  function cleanupDemo() {
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
+    if (volumeSimRef.current) {
+      clearInterval(volumeSimRef.current);
+      volumeSimRef.current = null;
+    }
+  }
+
+  function endCallAndSave() {
+    if (savingRef.current) return; // already saving
+    const info = customerInfoRef.current;
+    if (info && transcriptRef.current.length > 0) {
+      savingRef.current = true;
+      saveAndProcessSession(info, transcriptRef.current, setPostCallState);
+    }
+  }
 
   const startDemoMode = useCallback(() => {
+    setPostCallState('none');
+    savingRef.current = false;
     setStatus('connecting');
     setTimeout(() => {
       setStatus('listening');
-      const demoTranscript: TranscriptEntry[] = [
-        {
-          role: 'assistant',
-          text: VAPI_FIRST_MESSAGE,
-          timestamp: Date.now(),
-          isFinal: true,
-        },
-      ];
-      setTranscript(demoTranscript);
+      setTranscript([
+        { role: 'assistant', text: VAPI_FIRST_MESSAGE, timestamp: Date.now(), isFinal: true },
+      ]);
 
       let step = 0;
       demoIntervalRef.current = setInterval(() => {
@@ -168,18 +204,21 @@ export function useVapi(customerInfo?: CustomerInfo) {
           setStatus('speaking');
           setTranscript((prev) => [...prev, { role: 'assistant', text: "I'm identifying three core epics: Voice Requirements Engine, Sprint Management with AI Planning, and Automated QA Generation. Should I break these down into user stories with acceptance criteria?", timestamp: t, isFinal: true }]);
         } else {
-          if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+          cleanupDemo();
           setStatus('idle');
-          if (customerInfo) saveAndProcessSession(customerInfo, transcriptRef.current);
+          setVolumeLevel(0);
+          endCallAndSave();
         }
       }, 2500);
 
-      const volumeSim = setInterval(() => setVolumeLevel(Math.random() * 0.6 + 0.1), 100);
-      setTimeout(() => clearInterval(volumeSim), 18000);
+      volumeSimRef.current = setInterval(() => setVolumeLevel(Math.random() * 0.6 + 0.1), 100);
     }, 1200);
-  }, [customerInfo]);
+  }, []);
 
   const startCall = useCallback(async () => {
+    setPostCallState('none');
+    savingRef.current = false;
+
     if (isDemo) { startDemoMode(); return; }
 
     const vapi = vapiRef.current;
@@ -188,26 +227,21 @@ export function useVapi(customerInfo?: CustomerInfo) {
     setStatus('connecting');
     setTranscript([]);
     try {
+      const info = customerInfoRef.current;
       const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
-      const systemContent = `${VAPI_SYSTEM_PROMPT}${customerInfo ? `\n\nCustomer context: Name: ${customerInfo.name}, Company: ${customerInfo.company || 'N/A'}, Brief: ${customerInfo.brief || 'N/A'}` : ''}`;
+      const systemContent = `${VAPI_SYSTEM_PROMPT}${info ? `\n\nCustomer context: Name: ${info.name}, Company: ${info.company || 'N/A'}, Brief: ${info.brief || 'N/A'}` : ''}`;
 
       if (assistantId) {
-        // Use dashboard assistant — override only prompt + first message from our codebase
-        // Model provider and voice are inherited from the dashboard assistant config
         await vapi.start(assistantId, {
           firstMessage: VAPI_FIRST_MESSAGE,
-          variableValues: {
-            systemPrompt: systemContent,
-          },
+          variableValues: { systemPrompt: systemContent },
         });
       } else {
         await vapi.start({
           model: {
             provider: 'openai',
             model: 'gpt-4o',
-            messages: [
-              { role: 'system', content: systemContent },
-            ],
+            messages: [{ role: 'system', content: systemContent }],
           },
           voice: VAPI_VOICE_CONFIG,
           firstMessage: VAPI_FIRST_MESSAGE,
@@ -217,23 +251,22 @@ export function useVapi(customerInfo?: CustomerInfo) {
       console.error('Failed to start call:', err);
       setStatus('idle');
     }
-  }, [isDemo, startDemoMode, customerInfo]);
+  }, [isDemo, startDemoMode]);
 
   const stopCall = useCallback(() => {
     if (isDemo) {
-      if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+      cleanupDemo();
       setStatus('idle');
       setVolumeLevel(0);
-      if (customerInfo && transcriptRef.current.length > 0) {
-        saveAndProcessSession(customerInfo, transcriptRef.current);
-      }
+      endCallAndSave();
       return;
     }
     const vapi = vapiRef.current;
     if (vapi) vapi.stop();
+    // Don't call endCallAndSave here — the call-end event handler will do it
     setStatus('idle');
     setVolumeLevel(0);
-  }, [isDemo, customerInfo]);
+  }, [isDemo]);
 
   const toggleMute = useCallback(() => {
     if (!isDemo && vapiRef.current) {
@@ -245,5 +278,11 @@ export function useVapi(customerInfo?: CustomerInfo) {
     }
   }, [isMuted, isDemo]);
 
-  return { status, volumeLevel, transcript, isMuted, isDemo, startCall, stopCall, toggleMute };
+  function resetPostCall() {
+    setPostCallState('none');
+    savingRef.current = false;
+    setTranscript([]);
+  }
+
+  return { status, volumeLevel, transcript, isMuted, isDemo, postCallState, startCall, stopCall, toggleMute, resetPostCall };
 }

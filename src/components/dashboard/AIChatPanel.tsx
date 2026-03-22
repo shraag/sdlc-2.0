@@ -93,32 +93,127 @@ export function AIChatPanel({ open, onClose, projectId, context }: AIChatPanelPr
     sendMessage(input);
   }
 
-  // Simple markdown rendering for AI responses
+  // Parse inline markdown (bold, italic, code) into React nodes
+  function parseInline(text: string): React.ReactNode[] {
+    const parts: React.ReactNode[] = [];
+    let remaining = text;
+    let key = 0;
+
+    while (remaining.length > 0) {
+      // Inline code: `code`
+      const codeMatch = remaining.match(/^(.*?)`([^`]+)`/);
+      // Bold: **text**
+      const boldMatch = remaining.match(/^(.*?)\*\*(.+?)\*\*/);
+      // Italic: *text* (but not **)
+      const italicMatch = remaining.match(/^(.*?)(?<!\*)\*([^*]+)\*(?!\*)/);
+
+      // Find earliest match
+      const matches = [
+        codeMatch ? { type: 'code', match: codeMatch } : null,
+        boldMatch ? { type: 'bold', match: boldMatch } : null,
+        italicMatch ? { type: 'italic', match: italicMatch } : null,
+      ].filter(Boolean).sort((a, b) => a!.match[1].length - b!.match[1].length);
+
+      if (matches.length > 0) {
+        const { type, match } = matches[0]!;
+        // Add text before the match
+        if (match[1]) parts.push(<span key={key++}>{match[1]}</span>);
+        // Add the formatted part
+        if (type === 'bold') parts.push(<strong key={key++} className="font-semibold text-dash-text">{match[2]}</strong>);
+        else if (type === 'italic') parts.push(<em key={key++} className="italic">{match[2]}</em>);
+        else if (type === 'code') parts.push(<code key={key++} className="rounded bg-dash-surface-3 px-1 py-0.5 text-[11px] font-mono text-dash-accent">{match[2]}</code>);
+        remaining = remaining.slice(match[0].length);
+      } else {
+        parts.push(<span key={key++}>{remaining}</span>);
+        break;
+      }
+    }
+    return parts;
+  }
+
   function renderContent(text: string) {
     const lines = text.split('\n');
-    return lines.map((line, i) => {
+    const elements: React.ReactNode[] = [];
+    let inCodeBlock = false;
+    let codeLines: string[] = [];
+    let codeLang = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Code block fences
+      if (line.startsWith('```')) {
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+          codeLang = line.slice(3).trim();
+          codeLines = [];
+        } else {
+          elements.push(
+            <div key={i} className="my-2 rounded-lg bg-dash-bg border border-dash-border overflow-hidden">
+              {codeLang && <div className="px-3 py-1 text-[10px] text-dash-text-muted border-b border-dash-border uppercase tracking-wider">{codeLang}</div>}
+              <pre className="p-3 text-[11px] leading-relaxed font-mono text-dash-text-secondary overflow-x-auto">
+                {codeLines.join('\n')}
+              </pre>
+            </div>
+          );
+          inCodeBlock = false;
+          codeLines = [];
+          codeLang = '';
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeLines.push(line);
+        continue;
+      }
+
       // Headers
-      if (line.startsWith('### ')) return <h4 key={i} className="font-semibold text-dash-text mt-2 mb-1">{line.slice(4)}</h4>;
-      if (line.startsWith('## ')) return <h3 key={i} className="font-semibold text-dash-text mt-2 mb-1">{line.slice(3)}</h3>;
-      if (line.startsWith('# ')) return <h2 key={i} className="font-bold text-dash-text mt-2 mb-1">{line.slice(2)}</h2>;
-      // Bullets
-      if (line.startsWith('- ') || line.startsWith('* ')) {
-        return <p key={i} className="ml-3 before:content-['•'] before:mr-2 before:text-dash-accent">{line.slice(2)}</p>;
+      if (line.startsWith('### ')) {
+        elements.push(<h4 key={i} className="font-semibold text-dash-text text-[13px] mt-3 mb-1">{parseInline(line.slice(4))}</h4>);
+      } else if (line.startsWith('## ')) {
+        elements.push(<h3 key={i} className="font-semibold text-dash-text text-sm mt-3 mb-1">{parseInline(line.slice(3))}</h3>);
+      } else if (line.startsWith('# ')) {
+        elements.push(<h2 key={i} className="font-bold text-dash-text text-[15px] mt-3 mb-1">{parseInline(line.slice(2))}</h2>);
+      }
+      // Bullets (-, *, or indented -)
+      else if (/^\s*[-*]\s/.test(line)) {
+        const indent = line.match(/^(\s*)/)?.[1].length || 0;
+        const content = line.replace(/^\s*[-*]\s/, '');
+        elements.push(
+          <div key={i} className="flex items-start gap-2" style={{ paddingLeft: `${Math.min(indent, 4) * 8 + 4}px` }}>
+            <span className="text-dash-accent mt-[3px] text-[8px] shrink-0">●</span>
+            <span className="flex-1">{parseInline(content)}</span>
+          </div>
+        );
       }
       // Numbered lists
-      const numMatch = line.match(/^(\d+)\.\s/);
-      if (numMatch) {
-        return <p key={i} className="ml-3"><span className="text-dash-accent mr-2">{numMatch[1]}.</span>{line.slice(numMatch[0].length)}</p>;
+      else if (/^\s*\d+\.\s/.test(line)) {
+        const match = line.match(/^\s*(\d+)\.\s(.*)/);
+        if (match) {
+          elements.push(
+            <div key={i} className="flex items-start gap-2 ml-1">
+              <span className="text-dash-accent font-medium text-[11px] mt-[2px] shrink-0 w-4 text-right">{match[1]}.</span>
+              <span className="flex-1">{parseInline(match[2])}</span>
+            </div>
+          );
+        }
       }
-      // Bold
-      const boldLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      if (boldLine !== line) {
-        return <p key={i} dangerouslySetInnerHTML={{ __html: boldLine }} />;
+      // Horizontal rule
+      else if (/^---+$/.test(line.trim())) {
+        elements.push(<hr key={i} className="border-dash-border my-2" />);
       }
-      // Empty lines
-      if (!line.trim()) return <div key={i} className="h-2" />;
-      return <p key={i}>{line}</p>;
-    });
+      // Empty line
+      else if (!line.trim()) {
+        elements.push(<div key={i} className="h-1.5" />);
+      }
+      // Regular paragraph
+      else {
+        elements.push(<p key={i}>{parseInline(line)}</p>);
+      }
+    }
+
+    return elements;
   }
 
   if (!open) return null;
